@@ -29,7 +29,7 @@
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                         <span>Selesaikan Pembayaran Dalam:</span>
                     </div>
-                    <div class="qr-timer-digits" id="qr-timer-countdown">02:00</div>
+                    <div class="qr-timer-digits" id="qr-timer-countdown">10:00</div>
                 </div>
 
                 <div class="qr-summary" id="qr-summary">
@@ -41,7 +41,7 @@
                 <div class="qr-info">
                     <div class="qr-info-row">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        Scan QR lalu bayar sesuai nominal dalam batas waktu 2 menit.
+                        Scan QR lalu bayar sesuai nominal dalam batas waktu 10 menit.
                     </div>
                     <div class="qr-info-row">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -588,76 +588,112 @@
             updateSummary();
         });
 
-        // ── QR Modal & Countdown Timer (2 Menit) ──
-        let countdownTimer = null;
-        let timeRemaining = 120; // 120 detik = 2 menit
-        const TOTAL_PAYMENT_TIME = 120;
+        
+// ── QR Modal & Countdown Timer (10 Menit) ──
+let countdownTimer = null;
+let timeRemaining = 600; // 600 detik = 10 menit
+const TOTAL_PAYMENT_TIME = 600;
 
-        const modalFileInput  = document.getElementById('modal_payment_proof');
-        const hiddenFileInput = document.getElementById('hidden_payment_proof');
-        const dropzone        = document.getElementById('qr-dropzone');
-        const dropzoneEmpty   = document.getElementById('qr-dropzone-empty');
-        const dropzonePrev    = document.getElementById('qr-dropzone-preview');
-        const previewImg      = document.getElementById('qr-preview-img');
-        const previewName     = document.getElementById('qr-preview-name');
-        const previewSize     = document.getElementById('qr-preview-size');
-        const removeFileBtn   = document.getElementById('qr-preview-remove');
+// Deadline timer agar tidak kembali ke 10 menit
+// ketika modal ditutup dan dibuka kembali.
+let paymentDeadline = null;
+let paymentExpired = false;
 
-        function formatFileSize(bytes) {
-            if (!bytes || bytes === 0) return '0 B';
-            const k = 1024;
-            const sizes = ['B', 'KB', 'MB', 'GB'];
-            const i = Math.floor(Math.log(bytes) / Math.log(k));
-            return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+const modalFileInput  = document.getElementById('modal_payment_proof');
+const hiddenFileInput = document.getElementById('hidden_payment_proof');
+const dropzone        = document.getElementById('qr-dropzone');
+const dropzoneEmpty   = document.getElementById('qr-dropzone-empty');
+const dropzonePrev    = document.getElementById('qr-dropzone-preview');
+const previewImg      = document.getElementById('qr-preview-img');
+const previewName     = document.getElementById('qr-preview-name');
+const previewSize     = document.getElementById('qr-preview-size');
+const removeFileBtn   = document.getElementById('qr-preview-remove');
+
+function updateTimerDisplay() {
+    const min = Math.floor(Math.max(0, timeRemaining) / 60);
+    const sec = Math.max(0, timeRemaining) % 60;
+
+    const formatted =
+        String(min).padStart(2, '0') + ':' +
+        String(sec).padStart(2, '0');
+
+    const clockEl = document.getElementById('qr-timer-countdown');
+    const bannerEl = document.getElementById('qr-timer-banner');
+
+    if (clockEl) {
+        clockEl.textContent = formatted;
+    }
+
+    if (bannerEl) {
+        if (timeRemaining <= 60) {
+            bannerEl.classList.add('qr-timer-urgent');
+        } else {
+            bannerEl.classList.remove('qr-timer-urgent');
         }
+    }
+}
 
-        function updateTimerDisplay() {
-            const min = Math.floor(Math.max(0, timeRemaining) / 60);
-            const sec = Math.max(0, timeRemaining) % 60;
-            const formatted = String(min).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
-            const clockEl = document.getElementById('qr-timer-countdown');
-            const bannerEl = document.getElementById('qr-timer-banner');
+function handlePaymentExpired() {
+    if (paymentExpired) return;
 
-            if (clockEl) clockEl.textContent = formatted;
+    paymentExpired = true;
+    timeRemaining = 0;
 
-            if (bannerEl) {
-                if (timeRemaining <= 30) {
-                    bannerEl.classList.add('qr-timer-urgent');
-                } else {
-                    bannerEl.classList.remove('qr-timer-urgent');
-                }
-            }
+    stopCountdown();
+    updateTimerDisplay();
+    closeModal();
+
+    Swal.fire({
+        title: 'Waktu Pembayaran Habis!',
+        text: 'Batas waktu 10 menit untuk menyelesaikan pembayaran telah berakhir. Silakan periksa kembali pemesanan Anda.',
+        icon: 'warning',
+        confirmButtonColor: '#2563eb',
+        animation: false
+    });
+}
+
+function startCountdown() {
+    stopCountdown();
+
+    // Jangan membuat deadline baru ketika modal dibuka kembali.
+    if (paymentDeadline === null) {
+        paymentDeadline = Date.now() + (TOTAL_PAYMENT_TIME * 1000);
+    }
+
+    if (paymentExpired) {
+        handlePaymentExpired();
+        return;
+    }
+
+    function updateCountdown() {
+        const remainingMilliseconds = paymentDeadline - Date.now();
+
+        timeRemaining = Math.max(
+            0,
+            Math.ceil(remainingMilliseconds / 1000)
+        );
+
+        updateTimerDisplay();
+
+        if (remainingMilliseconds <= 0) {
+            handlePaymentExpired();
         }
+    }
 
-        function startCountdown() {
-            stopCountdown();
-            timeRemaining = TOTAL_PAYMENT_TIME;
-            updateTimerDisplay();
+    updateCountdown();
 
-            countdownTimer = setInterval(() => {
-                timeRemaining--;
-                updateTimerDisplay();
+    if (!paymentExpired) {
+        countdownTimer = setInterval(updateCountdown, 1000);
+    }
+}
 
-                if (timeRemaining <= 0) {
-                    stopCountdown();
-                    closeModal();
-                    Swal.fire({
-                        title: 'Waktu Pembayaran Habis!',
-                        text: 'Batas waktu 2 menit untuk menyelesaikan pembayaran telah berakhir. Silakan pilih jadwal dan ulangi pemesanan.',
-                        icon: 'warning',
-                        confirmButtonColor: '#2563eb',
-                        animation: false
-                    });
-                }
-            }, 1000);
-        }
+function stopCountdown() {
+    if (countdownTimer !== null) {
+        clearInterval(countdownTimer);
+        countdownTimer = null;
+    }
+}
 
-        function stopCountdown() {
-            if (countdownTimer) {
-                clearInterval(countdownTimer);
-                countdownTimer = null;
-            }
-        }
 
         function handleFileSelection(file) {
             if (!file) return;
@@ -823,17 +859,13 @@
 
         // Tombol "Upload Bukti Bayar" di modal → validasi bukti & submit
         confirmBtn?.addEventListener('click', function () {
-            if (timeRemaining <= 0) {
-                Swal.fire({
-                    title: 'Waktu Pembayaran Habis',
-                    text: 'Batas waktu 2 menit telah habis. Silakan ulangi pemesanan Anda.',
-                    icon: 'error',
-                    confirmButtonColor: '#2563eb',
-                    animation: false
-                });
-                closeModal();
-                return;
-            }
+            if (
+    paymentExpired ||
+    (paymentDeadline !== null && Date.now() >= paymentDeadline)
+) {
+    handlePaymentExpired();
+    return;
+}
 
             if (mainDatePicker && mainDatePicker.value && mainDatePicker.value < TODAY) {
                 Swal.fire({
