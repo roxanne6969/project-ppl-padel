@@ -10,6 +10,57 @@
         $availableSlots = max($totalSlots - $bookedSlots, 0);
     @endphp
 
+    {{-- ════════ STYLE: CUSTOM TIME PICKER ════════ --}}
+    <style>
+        .tp { position: relative; }
+
+        .tp-trigger {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            text-align: left;
+            cursor: pointer;
+        }
+        .tp-chevron { transition: transform .2s ease; flex-shrink: 0; }
+        .tp-trigger[aria-expanded="true"] .tp-chevron { transform: rotate(180deg); }
+
+        .tp-list {
+            position: absolute;
+            top: calc(100% + 6px);
+            left: 0;
+            right: 0;
+            z-index: 50;
+            margin: 0;
+            padding: 6px;
+            list-style: none;
+            max-height: 220px;          /* tinggi area scroll */
+            overflow-y: auto;
+            overscroll-behavior: contain;
+            background: #fff;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, .15);
+            scrollbar-width: thin;
+            scrollbar-color: #cbd5e1 transparent;
+        }
+        .tp-list[hidden] { display: none; }
+        .tp-list::-webkit-scrollbar { width: 6px; }
+        .tp-list::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+
+        .tp-option {
+            padding: 9px 12px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            color: #0f172a;
+        }
+        .tp-option:hover,
+        .tp-option--focus { background: #eff6ff; }
+        .tp-option--active { background: #2563eb; color: #fff; font-weight: 600; }
+        .tp-option--active:hover { background: #2563eb; }
+    </style>
+
     {{-- ════════ MODAL QR QRIS ════════ --}}
     <div class="qr-modal-backdrop" id="qr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title">
         <div class="qr-modal">
@@ -231,16 +282,33 @@
                 </div>
                 {{-- Tanggal disinkronkan dari date picker atas (hidden) --}}
                 <input type="hidden" id="booking_date" name="date" value="{{ old('date') && old('date') >= now()->toDateString() ? old('date') : $date }}">
+
+                {{-- Jam Mulai: custom scrollable picker --}}
                 <div class="db-form-group">
-                    <label class="db-label" for="start_time">Jam Mulai</label>
-                    <select class="db-input" id="start_time" name="start_time" required>
-                        @php $oldTime = old('start_time', '00:00'); @endphp
-                        @for ($h = 0; $h <= 23; $h++)
-                            @php $val = str_pad($h, 2, '0', STR_PAD_LEFT) . ':00'; @endphp
-                            <option value="{{ $val }}" @selected($oldTime === $val)>{{ $val }}</option>
-                        @endfor
-                    </select>
+                    <label class="db-label" id="start_time_label">Jam Mulai</label>
+                    @php $oldTime = old('start_time', '00:00'); @endphp
+                    <div class="tp" id="time-picker">
+                        {{-- Nilai yang dikirim ke server --}}
+                        <input type="hidden" id="start_time" name="start_time" value="{{ $oldTime }}">
+
+                        <button type="button" class="db-input tp-trigger" id="tp-trigger"
+                                aria-haspopup="listbox" aria-expanded="false" aria-labelledby="start_time_label">
+                            <span id="tp-value">{{ $oldTime }}</span>
+                            <svg class="tp-chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+                        </button>
+
+                        <ul class="tp-list" id="tp-list" role="listbox" tabindex="-1" hidden>
+                            @for ($h = 0; $h <= 23; $h++)
+                                @php $val = str_pad($h, 2, '0', STR_PAD_LEFT) . ':00'; @endphp
+                                <li class="tp-option {{ $oldTime === $val ? 'tp-option--active' : '' }}"
+                                    role="option"
+                                    data-value="{{ $val }}"
+                                    aria-selected="{{ $oldTime === $val ? 'true' : 'false' }}">{{ $val }}</li>
+                            @endfor
+                        </ul>
+                    </div>
                 </div>
+
                 <div class="db-form-group">
                     <label class="db-label" for="duration_hours">Durasi</label>
                     <select class="db-input" id="duration_hours" name="duration_hours" required>
@@ -363,26 +431,32 @@
         const ALL_SLOTS = Array.from({length: 24}, (_, i) => String(i).padStart(2,'0') + ':00');
 
         // ── Elements ──
-        const courtSel      = document.getElementById('court_id');
-        const mainDatePicker= document.getElementById('main-date-picker');  // date picker atas
-        const bookingDate   = document.getElementById('booking_date');       // hidden input di form
-        const timeSel       = document.getElementById('start_time');
-        const durSel        = document.getElementById('duration_hours');
-        const promoInput    = document.getElementById('promo_code');
-        const checkPromoBtn = document.getElementById('check-promo-btn');
-        const promoMsg      = document.getElementById('promo-message');
-        const openQrBtn     = document.getElementById('open-qr-btn');
-        const backdrop      = document.getElementById('qr-modal-backdrop');
-        const closeBtn      = document.getElementById('qr-modal-close');
-        const cancelBtn     = document.getElementById('qr-cancel-btn');
-        const confirmBtn    = document.getElementById('qr-confirm-btn');
-        const form          = document.getElementById('booking-form');
+        const courtSel       = document.getElementById('court_id');
+        const mainDatePicker = document.getElementById('main-date-picker');  // date picker atas
+        const bookingDate    = document.getElementById('booking_date');      // hidden input di form
+        const timeSel        = document.getElementById('start_time');        // hidden input (custom time picker)
+        const durSel         = document.getElementById('duration_hours');
+        const promoInput     = document.getElementById('promo_code');
+        const checkPromoBtn  = document.getElementById('check-promo-btn');
+        const promoMsg       = document.getElementById('promo-message');
+        const openQrBtn      = document.getElementById('open-qr-btn');
+        const backdrop       = document.getElementById('qr-modal-backdrop');
+        const closeBtn       = document.getElementById('qr-modal-close');
+        const cancelBtn      = document.getElementById('qr-cancel-btn');
+        const confirmBtn     = document.getElementById('qr-confirm-btn');
+        const form           = document.getElementById('booking-form');
 
         let currentDiscountPercentage = 0;
 
         // ── Ringkasan harga real-time ──
         function formatRupiah(n) {
             return 'Rp ' + n.toLocaleString('id-ID');
+        }
+
+        function formatFileSize(bytes) {
+            if (bytes < 1024) return bytes + ' B';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
         }
 
         function updateSummary() {
@@ -401,7 +475,7 @@
             document.getElementById('ps-court').textContent = courtSel.value ? courtTxt : '—';
             document.getElementById('ps-date').textContent  = dateTxt;
             document.getElementById('ps-time').textContent  = timeTxt + (timeSel.value ? ` (${dur} jam)` : '');
-            
+
             const totalEl = document.getElementById('ps-total');
             if (discount > 0) {
                 totalEl.innerHTML = `<del style="color: #94a3b8; font-size: 13px; margin-right: 8px;">${formatRupiah(dur * PRICE_PER_HOUR)}</del>${formatRupiah(total)}`;
@@ -449,6 +523,77 @@
         });
 
         updateSummary();
+
+        // ── Custom Scrollable Time Picker ──
+        (function initTimePicker() {
+            const trigger = document.getElementById('tp-trigger');
+            const list    = document.getElementById('tp-list');
+            const label   = document.getElementById('tp-value');
+            if (!trigger || !list || !label) return;
+
+            const options = Array.from(list.querySelectorAll('.tp-option'));
+            let focusIdx  = Math.max(options.findIndex(o => o.dataset.value === timeSel.value), 0);
+
+            function setFocus(i) {
+                focusIdx = Math.min(Math.max(i, 0), options.length - 1);
+                options.forEach((o, n) => o.classList.toggle('tp-option--focus', n === focusIdx));
+                options[focusIdx].scrollIntoView({ block: 'nearest' });
+            }
+
+            function openList() {
+                list.hidden = false;
+                trigger.setAttribute('aria-expanded', 'true');
+                // Scroll ke jam yang sedang dipilih (ditaruh di tengah)
+                const active = list.querySelector('.tp-option--active') || options[0];
+                list.scrollTop = active.offsetTop - list.clientHeight / 2 + active.offsetHeight / 2;
+                setFocus(options.indexOf(active));
+            }
+
+            function closeList() {
+                list.hidden = true;
+                trigger.setAttribute('aria-expanded', 'false');
+                options.forEach(o => o.classList.remove('tp-option--focus'));
+            }
+
+            function selectOption(opt) {
+                options.forEach(o => {
+                    const on = o === opt;
+                    o.classList.toggle('tp-option--active', on);
+                    o.setAttribute('aria-selected', on ? 'true' : 'false');
+                });
+                timeSel.value = opt.dataset.value;
+                label.textContent = opt.dataset.value;
+                timeSel.dispatchEvent(new Event('change'));   // memicu updateSummary()
+                closeList();
+                trigger.focus();
+            }
+
+            trigger.addEventListener('click', () => list.hidden ? openList() : closeList());
+
+            list.addEventListener('click', e => {
+                const opt = e.target.closest('.tp-option');
+                if (opt) selectOption(opt);
+            });
+
+            // Keyboard: ↑ ↓ Enter Esc
+            trigger.addEventListener('keydown', e => {
+                if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+                    e.preventDefault();
+                    if (list.hidden) { openList(); return; }
+                    setFocus(focusIdx + (e.key === 'ArrowDown' ? 1 : -1));
+                } else if (e.key === 'Enter' && !list.hidden) {
+                    e.preventDefault();
+                    selectOption(options[focusIdx]);
+                } else if (e.key === 'Escape') {
+                    closeList();
+                }
+            });
+
+            // Tutup jika klik di luar
+            document.addEventListener('click', e => {
+                if (!e.target.closest('#time-picker')) closeList();
+            });
+        })();
 
         // ── Price Grid Selection Sync ──
         const priceItems = document.querySelectorAll('.db-price-item');
@@ -506,16 +651,13 @@
             Object.values(bookingMap).forEach(slots => { bookedCount += Object.keys(slots).length; });
             const available  = Math.max(totalSlots - bookedCount, 0);
 
-            const valEl = document.querySelector('.db-stat-value:not(.db-stat-date)');
-            if (valEl) {
-                // Cari stat card "Slot Tersedia" secara spesifik
-                document.querySelectorAll('.db-stat-card').forEach(card => {
-                    if (card.querySelector('.db-stat-label')?.textContent.trim() === 'Slot Tersedia') {
-                        card.querySelector('.db-stat-value').textContent = available;
-                        card.querySelector('.db-stat-sub').textContent   = `Dari ${totalSlots} total slot`;
-                    }
-                });
-            }
+            // Cari stat card "Slot Tersedia" secara spesifik
+            document.querySelectorAll('.db-stat-card').forEach(card => {
+                if (card.querySelector('.db-stat-label')?.textContent.trim() === 'Slot Tersedia') {
+                    card.querySelector('.db-stat-value').textContent = available;
+                    card.querySelector('.db-stat-sub').textContent   = `Dari ${totalSlots} total slot`;
+                }
+            });
         }
 
         function setSlotGridLoading(loading) {
@@ -588,111 +730,111 @@
             updateSummary();
         });
 
-        
-// ── QR Modal & Countdown Timer (10 Menit) ──
-let countdownTimer = null;
-let timeRemaining = 600; // 600 detik = 10 menit
-const TOTAL_PAYMENT_TIME = 600;
 
-// Deadline timer agar tidak kembali ke 10 menit
-// ketika modal ditutup dan dibuka kembali.
-let paymentDeadline = null;
-let paymentExpired = false;
+        // ── QR Modal & Countdown Timer (10 Menit) ──
+        let countdownTimer = null;
+        let timeRemaining = 600; // 600 detik = 10 menit
+        const TOTAL_PAYMENT_TIME = 600;
 
-const modalFileInput  = document.getElementById('modal_payment_proof');
-const hiddenFileInput = document.getElementById('hidden_payment_proof');
-const dropzone        = document.getElementById('qr-dropzone');
-const dropzoneEmpty   = document.getElementById('qr-dropzone-empty');
-const dropzonePrev    = document.getElementById('qr-dropzone-preview');
-const previewImg      = document.getElementById('qr-preview-img');
-const previewName     = document.getElementById('qr-preview-name');
-const previewSize     = document.getElementById('qr-preview-size');
-const removeFileBtn   = document.getElementById('qr-preview-remove');
+        // Deadline timer agar tidak kembali ke 10 menit
+        // ketika modal ditutup dan dibuka kembali.
+        let paymentDeadline = null;
+        let paymentExpired = false;
 
-function updateTimerDisplay() {
-    const min = Math.floor(Math.max(0, timeRemaining) / 60);
-    const sec = Math.max(0, timeRemaining) % 60;
+        const modalFileInput  = document.getElementById('modal_payment_proof');
+        const hiddenFileInput = document.getElementById('hidden_payment_proof');
+        const dropzone        = document.getElementById('qr-dropzone');
+        const dropzoneEmpty   = document.getElementById('qr-dropzone-empty');
+        const dropzonePrev    = document.getElementById('qr-dropzone-preview');
+        const previewImg      = document.getElementById('qr-preview-img');
+        const previewName     = document.getElementById('qr-preview-name');
+        const previewSize     = document.getElementById('qr-preview-size');
+        const removeFileBtn   = document.getElementById('qr-preview-remove');
 
-    const formatted =
-        String(min).padStart(2, '0') + ':' +
-        String(sec).padStart(2, '0');
+        function updateTimerDisplay() {
+            const min = Math.floor(Math.max(0, timeRemaining) / 60);
+            const sec = Math.max(0, timeRemaining) % 60;
 
-    const clockEl = document.getElementById('qr-timer-countdown');
-    const bannerEl = document.getElementById('qr-timer-banner');
+            const formatted =
+                String(min).padStart(2, '0') + ':' +
+                String(sec).padStart(2, '0');
 
-    if (clockEl) {
-        clockEl.textContent = formatted;
-    }
+            const clockEl  = document.getElementById('qr-timer-countdown');
+            const bannerEl = document.getElementById('qr-timer-banner');
 
-    if (bannerEl) {
-        if (timeRemaining <= 60) {
-            bannerEl.classList.add('qr-timer-urgent');
-        } else {
-            bannerEl.classList.remove('qr-timer-urgent');
+            if (clockEl) {
+                clockEl.textContent = formatted;
+            }
+
+            if (bannerEl) {
+                if (timeRemaining <= 60) {
+                    bannerEl.classList.add('qr-timer-urgent');
+                } else {
+                    bannerEl.classList.remove('qr-timer-urgent');
+                }
+            }
         }
-    }
-}
 
-function handlePaymentExpired() {
-    if (paymentExpired) return;
+        function handlePaymentExpired() {
+            if (paymentExpired) return;
 
-    paymentExpired = true;
-    timeRemaining = 0;
+            paymentExpired = true;
+            timeRemaining = 0;
 
-    stopCountdown();
-    updateTimerDisplay();
-    closeModal();
+            stopCountdown();
+            updateTimerDisplay();
+            closeModal();
 
-    Swal.fire({
-        title: 'Waktu Pembayaran Habis!',
-        text: 'Batas waktu 10 menit untuk menyelesaikan pembayaran telah berakhir. Silakan periksa kembali pemesanan Anda.',
-        icon: 'warning',
-        confirmButtonColor: '#2563eb',
-        animation: false
-    });
-}
-
-function startCountdown() {
-    stopCountdown();
-
-    // Jangan membuat deadline baru ketika modal dibuka kembali.
-    if (paymentDeadline === null) {
-        paymentDeadline = Date.now() + (TOTAL_PAYMENT_TIME * 1000);
-    }
-
-    if (paymentExpired) {
-        handlePaymentExpired();
-        return;
-    }
-
-    function updateCountdown() {
-        const remainingMilliseconds = paymentDeadline - Date.now();
-
-        timeRemaining = Math.max(
-            0,
-            Math.ceil(remainingMilliseconds / 1000)
-        );
-
-        updateTimerDisplay();
-
-        if (remainingMilliseconds <= 0) {
-            handlePaymentExpired();
+            Swal.fire({
+                title: 'Waktu Pembayaran Habis!',
+                text: 'Batas waktu 10 menit untuk menyelesaikan pembayaran telah berakhir. Silakan periksa kembali pemesanan Anda.',
+                icon: 'warning',
+                confirmButtonColor: '#2563eb',
+                animation: false
+            });
         }
-    }
 
-    updateCountdown();
+        function startCountdown() {
+            stopCountdown();
 
-    if (!paymentExpired) {
-        countdownTimer = setInterval(updateCountdown, 1000);
-    }
-}
+            // Jangan membuat deadline baru ketika modal dibuka kembali.
+            if (paymentDeadline === null) {
+                paymentDeadline = Date.now() + (TOTAL_PAYMENT_TIME * 1000);
+            }
 
-function stopCountdown() {
-    if (countdownTimer !== null) {
-        clearInterval(countdownTimer);
-        countdownTimer = null;
-    }
-}
+            if (paymentExpired) {
+                handlePaymentExpired();
+                return;
+            }
+
+            function updateCountdown() {
+                const remainingMilliseconds = paymentDeadline - Date.now();
+
+                timeRemaining = Math.max(
+                    0,
+                    Math.ceil(remainingMilliseconds / 1000)
+                );
+
+                updateTimerDisplay();
+
+                if (remainingMilliseconds <= 0) {
+                    handlePaymentExpired();
+                }
+            }
+
+            updateCountdown();
+
+            if (!paymentExpired) {
+                countdownTimer = setInterval(updateCountdown, 1000);
+            }
+        }
+
+        function stopCountdown() {
+            if (countdownTimer !== null) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
+        }
 
 
         function handleFileSelection(file) {
@@ -860,12 +1002,12 @@ function stopCountdown() {
         // Tombol "Upload Bukti Bayar" di modal → validasi bukti & submit
         confirmBtn?.addEventListener('click', function () {
             if (
-    paymentExpired ||
-    (paymentDeadline !== null && Date.now() >= paymentDeadline)
-) {
-    handlePaymentExpired();
-    return;
-}
+                paymentExpired ||
+                (paymentDeadline !== null && Date.now() >= paymentDeadline)
+            ) {
+                handlePaymentExpired();
+                return;
+            }
 
             if (mainDatePicker && mainDatePicker.value && mainDatePicker.value < TODAY) {
                 Swal.fire({
@@ -952,4 +1094,3 @@ function stopCountdown() {
     })();
     </script>
 @endsection
-
