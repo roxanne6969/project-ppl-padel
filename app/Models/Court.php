@@ -2,11 +2,13 @@
 
 namespace App\Models;
 
+use Database\Factories\CourtFactory;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 
 class Court extends Model
 {
+    /** @use HasFactory<CourtFactory> */
     use HasFactory;
 
     protected $fillable = [
