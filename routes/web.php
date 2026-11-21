@@ -29,6 +29,8 @@ Route::middleware('auth')->group(function () {
     Route::middleware('role:user')->group(function () {
         Route::post('/bookings', [BookingController::class, 'store'])->name('bookings.store');
         Route::post('/bookings/{booking}/payment', [BookingController::class, 'uploadPayment'])->name('bookings.payment');
+        Route::post('/api/bookings/hold', [BookingController::class, 'hold'])->name('api.bookings.hold');
+        Route::post('/api/bookings/release', [BookingController::class, 'release'])->name('api.bookings.release');
         Route::get('/api/slots', [BookingController::class, 'getSlots'])->name('api.slots');
         Route::get('/api/promos/check', [PromoController::class, 'check'])->name('api.promos.check');
     });

@@ -10,6 +10,246 @@
         $availableSlots = max($totalSlots - $bookedSlots, 0);
     @endphp
 
+    {{-- ════════ STYLE: TIME PICKER MODAL (WHEEL) ════════ --}}
+    <style>
+        .tp-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.55);
+            z-index: 998;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            padding: 16px;
+        }
+        .tp-modal-backdrop.tp-modal-open {
+            display: flex;
+        }
+
+        .tp-modal {
+            background: #ffffff;
+            border: 1px solid var(--border-color, #d1d5db);
+            border-radius: 16px;
+            width: min(420px, 94vw);
+            box-shadow: 0 20px 40px -5px rgba(15, 23, 42, 0.25);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            animation: tpModalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        @keyframes tpModalIn {
+            from { opacity: 0; transform: scale(0.96) translateY(6px); }
+            to   { opacity: 1; transform: scale(1) translateY(0); }
+        }
+
+        .tp-modal-header {
+            background: #f8fafc;
+            border-bottom: 1px solid var(--border-color, #e2e8f0);
+            padding: 12px 18px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .tp-modal-title {
+            font-size: 14px;
+            font-weight: 700;
+            color: #1f2937;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .tp-modal-title svg { color: var(--primary-color, #2563eb); }
+
+        .tp-modal-close {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: var(--muted-color, #64748b);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 4px;
+            border-radius: 4px;
+        }
+        .tp-modal-close:hover {
+            color: #ef4444;
+            background: #fee2e2;
+        }
+
+        .tp-modal-body {
+            padding: 16px 18px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            background: #ffffff;
+        }
+
+        .tp-section {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 10px 12px 6px;
+        }
+
+        .tp-section-title {
+            font-size: 11.5px;
+            font-weight: 700;
+            letter-spacing: .06em;
+            text-transform: uppercase;
+            color: #64748b;
+            padding: 0 4px 4px;
+        }
+
+        /* ── Wheel Picker ── */
+        .tp-picker {
+            position: relative;
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            height: calc(38px * 3); /* 114px: compact, 3 baris tampak */
+        }
+
+        /* Highlight band di tengah */
+        .tp-picker::before {
+            content: "";
+            position: absolute;
+            left: 2px; right: 2px;
+            top: 50%;
+            height: 38px;
+            transform: translateY(-50%);
+            background: rgba(37, 99, 235, 0.08);
+            border: 1px solid rgba(37, 99, 235, 0.18);
+            border-radius: 8px;
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        .tp-picker .tp-col {
+            position: relative;
+            height: 100%;
+            overflow-y: auto;
+            scroll-snap-type: y mandatory;
+            scrollbar-width: none;
+            -webkit-overflow-scrolling: touch;
+            overscroll-behavior: contain;
+            padding: 38px 0; /* 1 item padding for 3 visible items */
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 25%, #000 75%, transparent 100%);
+                    mask-image: linear-gradient(to bottom, transparent 0%, #000 25%, #000 75%, transparent 100%);
+            z-index: 1;
+        }
+        .tp-picker .tp-col::-webkit-scrollbar { display: none; }
+
+        .tp-picker .tp-item {
+            height: 38px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            scroll-snap-align: center;
+            font-size: 20px;
+            font-weight: 600;
+            color: #94a3b8;
+            font-variant-numeric: tabular-nums;
+            transition: color .15s, transform .15s;
+            user-select: none;
+            cursor: pointer;
+        }
+        .tp-picker .tp-item.near   { color: #64748b; }
+        .tp-picker .tp-item.active { color: #0f172a; font-weight: 700; transform: scale(1.12); }
+
+        .tp-picker .tp-col.locked {
+            overflow: hidden;
+            pointer-events: none;
+            padding: 38px 0;
+            cursor: not-allowed;
+        }
+        .tp-picker .tp-col.locked .tp-item {
+            color: #0f172a;
+            font-weight: 700;
+            transform: scale(1.12);
+        }
+
+        .tp-picker .tp-col.period .tp-item {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        /* ── Ringkasan & Note ── */
+        .tp-summary {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 12px;
+            padding: 10px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .tp-summary-label { color: #64748b; font-size: 11.5px; font-weight: 500; }
+        .tp-summary-range { font-size: 14.5px; font-weight: 700; color: #0f172a; margin-top: 1px; }
+        .tp-summary-dur {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            color: #2563eb;
+            font-weight: 700;
+            padding: 4px 12px;
+            border-radius: 999px;
+            font-size: 12.5px;
+        }
+
+        .tp-note {
+            color: #64748b;
+            font-size: 11px;
+            text-align: center;
+            margin: 0;
+        }
+
+        .tp-modal-footer {
+            padding: 12px 18px;
+            border-top: 1px solid var(--border-color, #e2e8f0);
+            display: flex;
+            justify-content: flex-end;
+            gap: 8px;
+            background: #ffffff;
+        }
+
+        /* ── Trigger button in Form ── */
+        .tp-modal-trigger-btn {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            cursor: pointer;
+            background: #ffffff;
+            text-align: left;
+            padding: 8px 12px;
+        }
+        .tp-modal-trigger-btn:hover {
+            border-color: var(--primary-color, #2563eb);
+        }
+        .tp-trigger-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: #1e293b;
+            font-size: 13.5px;
+        }
+        .tp-trigger-left svg {
+            color: var(--primary-color, #2563eb);
+            flex-shrink: 0;
+        }
+        .tp-trigger-badge {
+            font-size: 11px;
+            font-weight: 600;
+            color: #2563eb;
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            padding: 3px 8px;
+            border-radius: 4px;
+            flex-shrink: 0;
+        }
+    </style>
+
     {{-- ════════ MODAL QR QRIS ════════ --}}
     <div class="qr-modal-backdrop" id="qr-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="qr-modal-title">
         <div class="qr-modal">
@@ -29,7 +269,7 @@
                         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
                         <span>Selesaikan Pembayaran Dalam:</span>
                     </div>
-                    <div class="qr-timer-digits" id="qr-timer-countdown">02:00</div>
+                    <div class="qr-timer-digits" id="qr-timer-countdown">01:30</div>
                 </div>
 
                 <div class="qr-summary" id="qr-summary">
@@ -41,7 +281,7 @@
                 <div class="qr-info">
                     <div class="qr-info-row">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-                        Scan QR lalu bayar sesuai nominal dalam batas waktu 2 menit.
+                        Scan QR lalu bayar sesuai nominal dalam batas waktu 1 menit 30 detik.
                     </div>
                     <div class="qr-info-row">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
@@ -90,6 +330,65 @@
                     Upload Bukti Bayar
                 </button>
                 <button class="db-btn qr-cancel-btn" id="qr-cancel-btn" type="button">Batal</button>
+            </div>
+        </div>
+    </div>
+
+    {{-- ════════ MODAL TIME PICKER (SCROLL-WHEEL) ════════ --}}
+    <div class="tp-modal-backdrop" id="tp-modal-backdrop" role="dialog" aria-modal="true" aria-labelledby="tp-modal-title">
+        <div class="tp-modal">
+            <div class="tp-modal-header">
+                <div class="tp-modal-title" id="tp-modal-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                    Pilih Jam Sewa Lapangan
+                </div>
+                <button class="tp-modal-close" id="tp-modal-close" type="button" aria-label="Tutup modal">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+            <div class="tp-modal-body">
+                <!-- ===== JAM MULAI ===== -->
+                <section class="tp-section" id="tp-start-section">
+                    <div class="tp-section-title">Jam Mulai</div>
+                    <div class="tp-picker" id="tp-start-picker">
+                        <div class="tp-col hour" aria-label="Jam mulai"></div>
+                        <div class="tp-col locked" aria-label="Menit"><div class="tp-item">00</div></div>
+                        <div class="tp-col period" aria-label="AM/PM mulai">
+                            <div class="tp-item">AM</div>
+                            <div class="tp-item">PM</div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- ===== JAM SELESAI ===== -->
+                <section class="tp-section" id="tp-end-section">
+                    <div class="tp-section-title">Jam Selesai</div>
+                    <div class="tp-picker" id="tp-end-picker">
+                        <div class="tp-col hour" aria-label="Jam selesai"></div>
+                        <div class="tp-col locked" aria-label="Menit"><div class="tp-item">00</div></div>
+                        <div class="tp-col period" aria-label="AM/PM selesai">
+                            <div class="tp-item">AM</div>
+                            <div class="tp-item">PM</div>
+                        </div>
+                    </div>
+                </section>
+
+                <div class="tp-summary">
+                    <div>
+                        <div class="tp-summary-label">Jadwal sewa</div>
+                        <div class="tp-summary-range" id="tp-range">-</div>
+                    </div>
+                    <div class="tp-summary-dur" id="tp-dur">-</div>
+                </div>
+
+                <p class="tp-note">Menit selalu :00 — sewa dihitung per kelipatan 1 jam.</p>
+            </div>
+            <div class="tp-modal-footer">
+                <button class="db-btn tp-modal-cancel-btn" id="tp-modal-cancel-btn" type="button">Batal</button>
+                <button class="db-btn db-btn-primary" id="tp-modal-apply-btn" type="button">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    Terapkan Jam
+                </button>
             </div>
         </div>
     </div>
@@ -219,6 +518,7 @@
         <form method="post" action="{{ route('bookings.store') }}" class="db-booking-form" id="booking-form" enctype="multipart/form-data">
             @csrf
             <input type="file" id="hidden_payment_proof" name="payment_proof" style="display:none;" required>
+            <input type="hidden" id="held_booking_id" name="held_booking_id" value="">
             <div class="db-form-grid">
                 <div class="db-form-group">
                     <label class="db-label" for="court_id">Lapangan</label>
@@ -231,15 +531,26 @@
                 </div>
                 {{-- Tanggal disinkronkan dari date picker atas (hidden) --}}
                 <input type="hidden" id="booking_date" name="date" value="{{ old('date') && old('date') >= now()->toDateString() ? old('date') : $date }}">
+
+                {{-- Jam Mulai & Selesai: scroll-wheel picker (collapsible) --}}
+                @php
+                    $oldStart = old('start_time', '20:00');
+                    $oldDur   = (int) old('duration_hours', 1);
+                    $oldStartH = (int) explode(':', $oldStart)[0];
+                    $oldEndH   = ($oldStartH + $oldDur) % 24;
+                    $oldEndFmt = str_pad($oldEndH, 2, '0', STR_PAD_LEFT) . ':00';
+                @endphp
+                <input type="hidden" id="start_time" name="start_time" value="{{ $oldStart }}">
+
                 <div class="db-form-group">
-                    <label class="db-label" for="start_time">Jam Mulai</label>
-                    <select class="db-input" id="start_time" name="start_time" required>
-                        @php $oldTime = old('start_time', '00:00'); @endphp
-                        @for ($h = 0; $h <= 23; $h++)
-                            @php $val = str_pad($h, 2, '0', STR_PAD_LEFT) . ':00'; @endphp
-                            <option value="{{ $val }}" @selected($oldTime === $val)>{{ $val }}</option>
-                        @endfor
-                    </select>
+                    <label class="db-label" id="start_time_label">Jam Sewa</label>
+                    <button type="button" class="db-input tp-modal-trigger-btn" id="tp-modal-open-btn" aria-haspopup="dialog">
+                        <div class="tp-trigger-left">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            <span id="tp-trigger-text">{{ $oldStart }} – {{ $oldEndFmt }} ({{ $oldDur }} jam)</span>
+                        </div>
+                        <span class="tp-trigger-badge">Pilih Jam</span>
+                    </button>
                 </div>
                 <div class="db-form-group">
                     <label class="db-label" for="duration_hours">Durasi</label>
@@ -450,6 +761,209 @@
 
         updateSummary();
 
+        // ── Modal Time Picker (Wheel Style) ──
+        (function initModalTimePicker() {
+            const ITEM_H = 38;
+
+            const modalBackdrop = document.getElementById('tp-modal-backdrop');
+            const openBtn       = document.getElementById('tp-modal-open-btn');
+            const closeBtn      = document.getElementById('tp-modal-close');
+            const cancelBtn     = document.getElementById('tp-modal-cancel-btn');
+            const applyBtn      = document.getElementById('tp-modal-apply-btn');
+            const triggerText   = document.getElementById('tp-trigger-text');
+            const rangeEl       = document.getElementById('tp-range');
+            const durEl         = document.getElementById('tp-dur');
+
+            const startRoot     = document.getElementById('tp-start-picker');
+            const endRoot       = document.getElementById('tp-end-picker');
+            if (!modalBackdrop || !openBtn || !startRoot || !endRoot) return;
+
+            function createPicker(root, initial24, onChange) {
+                const hourCol   = root.querySelector('.hour');
+                const periodCol = root.querySelector('.period');
+
+                hourCol.innerHTML = '';
+                for (let h = 1; h <= 12; h++) {
+                    const d = document.createElement('div');
+                    d.className = 'tp-item';
+                    d.textContent = h;
+                    hourCol.appendChild(d);
+                }
+
+                const idx = el => Math.round(el.scrollTop / ITEM_H);
+
+                function paint(col) {
+                    const i = idx(col);
+                    col.querySelectorAll('.tp-item').forEach((it, n) => {
+                        it.classList.toggle('active', n === i);
+                        it.classList.toggle('near', Math.abs(n - i) === 1);
+                    });
+                }
+
+                function get24() {
+                    const h12 = idx(hourCol) + 1;
+                    const pm  = idx(periodCol) === 1;
+                    return (h12 % 12) + (pm ? 12 : 0);
+                }
+
+                function set24(v, smooth = true) {
+                    let pm, h12;
+                    if (v === 24) {
+                        pm = false; // 12 AM considered midnight / 24:00
+                        h12 = 12;
+                    } else {
+                        pm = v >= 12;
+                        h12 = v % 12 || 12;
+                    }
+                    const behavior = smooth ? 'smooth' : 'auto';
+                    hourCol.scrollTo({ top: (h12 - 1) * ITEM_H, behavior });
+                    periodCol.scrollTo({ top: (pm ? 1 : 0) * ITEM_H, behavior });
+                    paint(hourCol);
+                    paint(periodCol);
+                }
+
+                function bind(col) {
+                    let t;
+                    col.addEventListener('scroll', () => {
+                        paint(col);
+                        clearTimeout(t);
+                        t = setTimeout(() => {
+                            paint(col);
+                            onChange(get24());
+                        }, 80);
+                    });
+                    col.querySelectorAll('.tp-item').forEach((it, n) => {
+                        it.addEventListener('click', () => {
+                            col.scrollTo({ top: n * ITEM_H, behavior: 'smooth' });
+                        });
+                    });
+                }
+
+                bind(hourCol);
+                bind(periodCol);
+
+                set24(initial24, false);
+
+                return {
+                    get: get24,
+                    set: set24,
+                    paint: () => { paint(hourCol); paint(periodCol); }
+                };
+            }
+
+            const fmt24 = v24 => String(v24 % 24).padStart(2, '0') + ':00';
+            const fmt12 = v24 => {
+                const h = v24 % 24;
+                const h12 = h % 12 || 12;
+                return `${h12}:00 ${h >= 12 ? 'PM' : 'AM'}`;
+            };
+
+            let startPicker = null;
+            let endPicker   = null;
+            let lockWheel   = false;
+            let tempStartH  = {{ $oldStartH }};
+            let tempEndH    = {{ $oldEndH === 0 ? 24 : $oldEndH }};
+
+            function refreshWheel() {
+                if (lockWheel || !startPicker || !endPicker) return;
+                const s = startPicker.get();
+                let e = endPicker.get();
+                let eff = e === 0 ? 24 : e;
+
+                // Jam selesai harus setelah jam mulai
+                if (eff <= s) {
+                    e = (s + 1) % 24;
+                    eff = e === 0 ? 24 : e;
+                    lockWheel = true;
+                    endPicker.set(e, true);
+                    setTimeout(() => { lockWheel = false; }, 300);
+                }
+
+                tempStartH = s;
+                tempEndH   = eff;
+
+                const dur = Math.max(1, eff - s);
+                if (rangeEl) {
+                    rangeEl.textContent = `${fmt24(s)} – ${fmt24(eff === 24 ? 0 : eff)} (${fmt12(s)} – ${fmt12(eff === 24 ? 0 : eff)})`;
+                }
+                if (durEl) {
+                    durEl.textContent = `${dur} jam`;
+                }
+            }
+
+            startPicker = createPicker(startRoot, tempStartH, refreshWheel);
+            endPicker   = createPicker(endRoot, tempEndH, refreshWheel);
+
+            function updateTriggerDisplay(startH, dur) {
+                const endH = (startH + dur) % 24;
+                if (triggerText) {
+                    triggerText.textContent = `${fmt24(startH)} – ${fmt24(endH)} (${dur} jam)`;
+                }
+            }
+
+            function openModal() {
+                modalBackdrop.classList.add('tp-modal-open');
+                document.body.style.overflow = 'hidden';
+
+                const curStart = timeSel?.value || '20:00';
+                const curStartH = parseInt(curStart.split(':')[0]) || 20;
+                const curDur    = parseInt(durSel?.value) || 1;
+                let curEndH   = (curStartH + curDur) % 24;
+                if (curEndH === 0) curEndH = 24;
+
+                tempStartH = curStartH;
+                tempEndH   = curEndH;
+
+                requestAnimationFrame(() => {
+                    startPicker.set(curStartH, false);
+                    endPicker.set(curEndH, false);
+                    refreshWheel();
+                });
+            }
+
+            function closeModal() {
+                modalBackdrop.classList.remove('tp-modal-open');
+                document.body.style.overflow = '';
+            }
+
+            function applyTime() {
+                const s   = tempStartH;
+                const eff = tempEndH;
+                const dur = Math.max(1, Math.min(eff - s, 8));
+
+                timeSel.value = fmt24(s);
+                if (durSel) {
+                    durSel.value = dur;
+                }
+
+                updateTriggerDisplay(s, dur);
+
+                timeSel.dispatchEvent(new Event('change'));
+                durSel?.dispatchEvent(new Event('change'));
+
+                closeModal();
+            }
+
+            openBtn.addEventListener('click', openModal);
+            closeBtn?.addEventListener('click', closeModal);
+            cancelBtn?.addEventListener('click', closeModal);
+            applyBtn?.addEventListener('click', applyTime);
+
+            modalBackdrop.addEventListener('click', function(e) {
+                if (e.target === modalBackdrop) closeModal();
+            });
+
+            // Sinkronisasi jika durasi diganti di luar modal
+            durSel?.addEventListener('change', function() {
+                const s = parseInt((timeSel?.value || '20:00').split(':')[0]) || 20;
+                const dur = parseInt(this.value) || 1;
+                updateTriggerDisplay(s, dur);
+            });
+
+            // Initial trigger text
+            updateTriggerDisplay(tempStartH, parseInt(durSel?.value) || 1);
+        })();
+
         // ── Price Grid Selection Sync ──
         const priceItems = document.querySelectorAll('.db-price-item');
         priceItems.forEach(item => {
@@ -588,10 +1102,14 @@
             updateSummary();
         });
 
-        // ── QR Modal & Countdown Timer (2 Menit) ──
+        // ── QR Modal & Countdown Timer (1 Menit 30 Detik) ──
         let countdownTimer = null;
-        let timeRemaining = 120; // 120 detik = 2 menit
-        const TOTAL_PAYMENT_TIME = 120;
+        let timeRemaining = 90; // 90 detik = 1 menit 30 detik
+        const TOTAL_PAYMENT_TIME = 90;
+
+        let paymentDeadline = null;
+        let paymentExpired = false;
+        let heldBookingId = null;
 
         const modalFileInput  = document.getElementById('modal_payment_proof');
         const hiddenFileInput = document.getElementById('hidden_payment_proof');
@@ -602,6 +1120,28 @@
         const previewName     = document.getElementById('qr-preview-name');
         const previewSize     = document.getElementById('qr-preview-size');
         const removeFileBtn   = document.getElementById('qr-preview-remove');
+
+        async function releaseHeldSlot() {
+            if (!heldBookingId) return;
+            const bId = heldBookingId;
+            heldBookingId = null;
+            const hiddenIdInput = document.getElementById('held_booking_id');
+            if (hiddenIdInput) hiddenIdInput.value = '';
+
+            try {
+                await fetch('/api/bookings/release', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({ booking_id: bId })
+                });
+            } catch (e) {}
+
+            fetchSlotsForDate(mainDatePicker ? mainDatePicker.value : TODAY);
+        }
 
         function formatFileSize(bytes) {
             if (!bytes || bytes === 0) return '0 B';
@@ -629,25 +1169,44 @@
             }
         }
 
+        function handlePaymentExpired() {
+            if (paymentExpired) return;
+            paymentExpired = true;
+
+            stopCountdown();
+            updateTimerDisplay();
+            closeModal(false);
+
+            Swal.fire({
+                title: 'Waktu Pembayaran Habis!',
+                text: 'Batas waktu 1 menit 30 detik untuk menyelesaikan pembayaran telah berakhir. Slot telah dibebaskan kembali.',
+                icon: 'warning',
+                confirmButtonColor: '#2563eb',
+                animation: false
+            });
+        }
+
         function startCountdown() {
             stopCountdown();
-            timeRemaining = TOTAL_PAYMENT_TIME;
+
+            if (paymentDeadline === null) {
+                paymentDeadline = Date.now() + (TOTAL_PAYMENT_TIME * 1000);
+            }
+
+            timeRemaining = Math.max(0, Math.ceil((paymentDeadline - Date.now()) / 1000));
             updateTimerDisplay();
 
+            if (timeRemaining <= 0) {
+                handlePaymentExpired();
+                return;
+            }
+
             countdownTimer = setInterval(() => {
-                timeRemaining--;
+                timeRemaining = Math.max(0, Math.ceil((paymentDeadline - Date.now()) / 1000));
                 updateTimerDisplay();
 
                 if (timeRemaining <= 0) {
-                    stopCountdown();
-                    closeModal();
-                    Swal.fire({
-                        title: 'Waktu Pembayaran Habis!',
-                        text: 'Batas waktu 2 menit untuk menyelesaikan pembayaran telah berakhir. Silakan pilih jadwal dan ulangi pemesanan.',
-                        icon: 'warning',
-                        confirmButtonColor: '#2563eb',
-                        animation: false
-                    });
+                    handlePaymentExpired();
                 }
             }, 1000);
         }
@@ -757,30 +1316,6 @@
         }
 
         function openModal() {
-            if (mainDatePicker && mainDatePicker.value && mainDatePicker.value < TODAY) {
-                Swal.fire({
-                    title: 'Peringatan',
-                    text: 'Tidak dapat memesan untuk tanggal yang sudah lewat.',
-                    icon: 'warning',
-                    confirmButtonColor: '#2563eb',
-                    animation: false
-                });
-                mainDatePicker.value = TODAY;
-                if (bookingDate) bookingDate.value = TODAY;
-                updateSummary();
-                return;
-            }
-
-            if (!courtSel.value || !mainDatePicker.value || !timeSel.value || !durSel.value) {
-                Swal.fire({
-                    title: 'Peringatan',
-                    text: 'Lengkapi form booking terlebih dahulu.',
-                    icon: 'warning',
-                    confirmButtonColor: '#2563eb',
-                    animation: false
-                });
-                return;
-            }
             const dur     = parseInt(durSel.value) || 1;
             let total     = dur * PRICE_PER_HOUR;
             let discountHtml = '';
@@ -808,30 +1343,145 @@
             document.body.style.overflow = 'hidden';
         }
 
-        function closeModal() {
+        function closeModal(isSubmitting = false) {
             stopCountdown();
             backdrop.classList.remove('qr-modal-open');
             document.body.style.overflow = '';
+
+            if (!isSubmitting) {
+                releaseHeldSlot();
+            }
         }
 
-        openQrBtn?.addEventListener('click', openModal);
-        closeBtn?.addEventListener('click', closeModal);
-        cancelBtn?.addEventListener('click', closeModal);
+        async function handleOpenQr() {
+            if (mainDatePicker && mainDatePicker.value && mainDatePicker.value < TODAY) {
+                Swal.fire({
+                    title: 'Peringatan',
+                    text: 'Tidak dapat memesan untuk tanggal yang sudah lewat.',
+                    icon: 'warning',
+                    confirmButtonColor: '#2563eb',
+                    animation: false
+                });
+                mainDatePicker.value = TODAY;
+                if (bookingDate) bookingDate.value = TODAY;
+                updateSummary();
+                return;
+            }
+
+            if (!courtSel.value || !mainDatePicker.value || !timeSel.value || !durSel.value) {
+                Swal.fire({
+                    title: 'Peringatan',
+                    text: 'Lengkapi form booking terlebih dahulu.',
+                    icon: 'warning',
+                    confirmButtonColor: '#2563eb',
+                    animation: false
+                });
+                return;
+            }
+
+            // Validasi lokal: Cek bentrok dengan slot yang sudah terisi di grid
+            const courtId = courtSel.value;
+            const startH  = parseInt(timeSel.value.split(':')[0]) || 0;
+            const dur     = parseInt(durSel.value) || 1;
+
+            for (let h = startH; h < startH + dur; h++) {
+                const sStr = String(h).padStart(2, '0') + ':00';
+                if (currentBookingMap[courtId]?.[sStr]) {
+                    Swal.fire({
+                        title: 'Slot Tidak Tersedia',
+                        text: `Slot jam ${sStr} sudah terisi atau sedang dalam proses transaksi. Silakan pilih jadwal lain.`,
+                        icon: 'warning',
+                        confirmButtonColor: '#2563eb',
+                        animation: false
+                    });
+                    return;
+                }
+            }
+
+            // Kunci slot secara atomic di backend (mencegah race condition)
+            openQrBtn.disabled = true;
+            const origHtml = openQrBtn.innerHTML;
+            openQrBtn.textContent = 'Mengamankan slot...';
+
+            try {
+                const res = await fetch('/api/bookings/hold', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRF-TOKEN': '{{ csrf_token() }}',
+                        'Accept': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        court_id: courtId,
+                        date: mainDatePicker.value,
+                        start_time: timeSel.value,
+                        duration_hours: dur,
+                        promo_code: promoInput ? promoInput.value.trim() : null
+                    })
+                });
+
+                const data = await res.json();
+
+                if (!res.ok || !data.success) {
+                    Swal.fire({
+                        title: 'Slot Tidak Dapat Dipilih',
+                        text: data.message || 'Slot lapangan ini sedang dalam proses transaksi oleh user lain. Silakan pilih jadwal lain.',
+                        icon: 'warning',
+                        confirmButtonColor: '#2563eb',
+                        animation: false
+                    });
+                    fetchSlotsForDate(mainDatePicker.value);
+                    return;
+                }
+
+                heldBookingId = data.booking_id;
+                const hiddenInput = document.getElementById('held_booking_id');
+                if (hiddenInput) hiddenInput.value = data.booking_id;
+
+                paymentDeadline = null;
+                paymentExpired = false;
+
+                openModal();
+                fetchSlotsForDate(mainDatePicker.value);
+            } catch (err) {
+                Swal.fire({
+                    title: 'Kesalahan Jaringan',
+                    text: 'Gagal mengamankan slot. Silakan periksa koneksi internet Anda.',
+                    icon: 'error',
+                    confirmButtonColor: '#2563eb',
+                    animation: false
+                });
+            } finally {
+                openQrBtn.disabled = false;
+                openQrBtn.innerHTML = origHtml;
+            }
+        }
+
+        openQrBtn?.addEventListener('click', handleOpenQr);
+        closeBtn?.addEventListener('click', () => closeModal(false));
+        cancelBtn?.addEventListener('click', () => closeModal(false));
         backdrop?.addEventListener('click', function(e) {
-            if (e.target === backdrop) closeModal();
+            if (e.target === backdrop) closeModal(false);
         });
+
+        // ── Real-Time Slot Polling (Update Slot Jika Ada Transaksi dari User Lain) ──
+        setInterval(() => {
+            if (document.visibilityState === 'visible' && !backdrop.classList.contains('qr-modal-open')) {
+                fetchSlotsForDate(mainDatePicker ? mainDatePicker.value : TODAY);
+            }
+        }, 5000);
 
         // Tombol "Upload Bukti Bayar" di modal → validasi bukti & submit
         confirmBtn?.addEventListener('click', function () {
             if (timeRemaining <= 0) {
                 Swal.fire({
                     title: 'Waktu Pembayaran Habis',
-                    text: 'Batas waktu 2 menit telah habis. Silakan ulangi pemesanan Anda.',
+                    text: 'Batas waktu 1 menit 30 detik telah habis. Silakan ulangi pemesanan Anda.',
                     icon: 'error',
                     confirmButtonColor: '#2563eb',
                     animation: false
                 });
-                closeModal();
+                closeModal(false);
                 return;
             }
 
@@ -846,7 +1496,7 @@
                 mainDatePicker.value = TODAY;
                 if (bookingDate) bookingDate.value = TODAY;
                 updateSummary();
-                closeModal();
+                closeModal(false);
                 return;
             }
 
@@ -881,7 +1531,7 @@
             }
 
             stopCountdown();
-            closeModal();
+            closeModal(true);
             form.submit();
         });
 

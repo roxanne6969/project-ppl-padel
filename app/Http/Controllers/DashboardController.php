@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\Booking;
 use App\Models\Court;
+use App\Models\Promo;
 use App\Models\User;
-use Carbon\Carbon;
 use Illuminate\Http\Request;
 
 class DashboardController extends Controller
@@ -28,15 +28,17 @@ class DashboardController extends Controller
     private function userDashboard(Request $request)
     {
         $today = now()->toDateString();
-        $date  = $request->input('date', $today);
+        $date = $request->input('date', $today);
 
         // Pastikan tanggal tidak boleh tanggal yang sudah lewat
         if ($date < $today) {
             $date = $today;
         }
 
+        BookingController::cleanupExpiredHolds();
+
         $courts = Court::query()->orderBy('name')->get();
-        $slots  = $this->buildSlots();
+        $slots = $this->buildSlots();
 
         // Booking semua court untuk slot grid (hari yang dipilih)
         $bookings = Booking::query()
@@ -47,18 +49,22 @@ class DashboardController extends Controller
 
         $bookingMap = $this->buildBookingMap($bookings);
 
-        // Riwayat booking milik user yang login
+        // Riwayat booking milik user yang login (hanya yang sudah upload bukti atau confirmed)
         $myBookings = Booking::query()
             ->with('court')
             ->where('user_id', $request->user()->id)
+            ->where(function ($query) {
+                $query->whereNotNull('payment_proof')
+                    ->orWhere('status', Booking::STATUS_CONFIRMED);
+            })
             ->orderByDesc('date')
             ->orderByDesc('start_time')
             ->get();
 
         return view('dashboard.user', [
-            'date'       => $date,
-            'courts'     => $courts,
-            'slots'      => $slots,
+            'date' => $date,
+            'courts' => $courts,
+            'slots' => $slots,
             'bookingMap' => $bookingMap,
             'myBookings' => $myBookings,
             'pricePerHour' => 300000,
@@ -78,9 +84,9 @@ class DashboardController extends Controller
         $courts = Court::query()->orderBy('name')->get();
 
         return view('dashboard.admin', [
-            'users'    => $users,
+            'users' => $users,
             'bookings' => $bookings,
-            'courts'   => $courts,
+            'courts' => $courts,
         ]);
     }
 
@@ -105,14 +111,14 @@ class DashboardController extends Controller
             ->limit(50)
             ->get();
 
-        $promos = \App\Models\Promo::orderBy('created_at', 'desc')->get();
+        $promos = Promo::orderBy('created_at', 'desc')->get();
 
         return view('dashboard.owner', [
-            'users'        => $users,
-            'revenue'      => $revenue,
+            'users' => $users,
+            'revenue' => $revenue,
             'activeAdmins' => $activeAdmins,
-            'bookings'     => $bookings,
-            'promos'       => $promos,
+            'bookings' => $bookings,
+            'promos' => $promos,
         ]);
     }
 
@@ -120,8 +126,9 @@ class DashboardController extends Controller
     {
         $slots = [];
         for ($i = 0; $i < 24; $i++) {
-            $slots[] = str_pad($i, 2, '0', STR_PAD_LEFT) . ':00';
+            $slots[] = str_pad($i, 2, '0', STR_PAD_LEFT).':00';
         }
+
         return $slots;
     }
 
@@ -133,17 +140,19 @@ class DashboardController extends Controller
             // start_time & end_time dari DB bisa berformat "HH:MM:SS" atau "HH:MM"
             // Ambil hanya jam:menit agar konsisten
             $startStr = substr($booking->start_time, 0, 5); // "HH:MM"
-            $endStr   = substr($booking->end_time,   0, 5); // "HH:MM"
+            $endStr = substr($booking->end_time, 0, 5); // "HH:MM"
 
             $startH = (int) explode(':', $startStr)[0];
-            $endH   = (int) explode(':', $endStr)[0];
-            $endM   = (int) explode(':', $endStr)[1];
+            $endH = (int) explode(':', $endStr)[0];
+            $endM = (int) explode(':', $endStr)[1];
 
             // Jika end_time punya menit > 0, bulatkan ke atas
-            if ($endM > 0) $endH++;
+            if ($endM > 0) {
+                $endH++;
+            }
 
             for ($h = $startH; $h < $endH; $h++) {
-                $slot = str_pad($h, 2, '0', STR_PAD_LEFT) . ':00';
+                $slot = str_pad($h, 2, '0', STR_PAD_LEFT).':00';
                 $map[$booking->court_id][$slot] = $booking->status;
             }
         }
